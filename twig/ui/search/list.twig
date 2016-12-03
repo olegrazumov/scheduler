@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title></title>
+        <link rel="stylesheet" href="css/style.css">
+        <base href="{{ baseHref }}">
+    </head>
+    <body>
+        <h4><a href="search">Создать поиск</a></h4>
+
+        {% if searches | length > 0 %}
+            <table>
+                <thead>
+                    <th>Название</th>
+                    <th>Время последнего выполнения</th>
+                    <th>Время следующего выполнения</th>
+                    <th></th>
+                </thead>
+                <tbody>
+                    {% for search in searches %}
+                        <tr>
+                            <td class="searchName">{{ search.name }}</td>
+                            <td>{{ search.last_execution ? search.last_execution|date("Y-m-d H:i:s") : 'Поиск еще не выполнялся' }}</td>
+                            <td>{{ search.next_execution ? search.next_execution|date("Y-m-d H:i:s") : 'Период выполнения не задан'}}</td>
+                            <td>
+                                <a href="search?action=edit&id={{ search.id }}">Редактировать</a>
+                                <a class="deleteSearch" data-searchId ="{{ search.id }}" href="javascript:void(0);">Удалить</a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+
+        <form id="form" style="display:none" action=""></form>
+
+        <script>
+            var deleteLinks = document.querySelectorAll('.deleteSearch');
+            if (deleteLinks.length) {
+                for (var i = 0; i < deleteLinks.length; i++) {
+                    deleteLinks[i].onclick = function() {
+                        if (!confirm('Удалить поиск "' + this.parentNode.parentNode.querySelector('.searchName').textContent + '"?')) {
+                            return;
+                        }
+                        var form = document.querySelector('#form');
+                        form.action = 'search?action=delete&id=' + this.getAttribute('data-searchId');
+                        form.method = 'post';
+                        form.submit();
+                    }
+                }
+            };
+        </script>
+    </body>
+</html>

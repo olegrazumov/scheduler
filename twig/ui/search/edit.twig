@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title></title>
+        <link rel="stylesheet" href="css/style.css">
+        <base href="{{ baseHref }}">
+    </head>
+    <body>
+        <h4><a href="./">Главная</a></h4>
+        <form action="" method="post">
+            <input name="id" type="hidden" value="{{ search.id }}">
+            <fieldset>
+                <legend>
+                    {% if search.id %}
+                        {{ search.name }}
+                    {% else %}
+                        Новый поиск
+                    {% endif %}
+                </legend>
+                <div class="formBlock">
+                    <div>
+                        Название:
+                        <input name="name" type="text" value="{{ search.name }}">
+                    </div>
+                    <div>
+                        Получатель:
+                        <input name="params[emails]" type="text" value="{{ search.params.emails }}">
+                    </div>
+                    <div>
+                        Период отправки:
+                        <select name="params[period]">
+                            <option></option>
+                            {% for period, value in periods %}
+                                <option value="{{ value }}" {{ search.params.period == value ? 'selected="selected"' : '' }}>{{ period }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </fieldset>
+            <fieldset>
+                <legend>Параметры поиска</legend>
+                <div class="formBlock">
+                    <div>
+                        Статус:
+                        <select name="params[status]">
+                            <option value="">Все</option>
+                            {% for status, value in statuses %}
+                                <option value="{{ value }}" {{ search.params.status == value ? 'selected="selected"' : '' }}>{{ status }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        Тип имущества:
+                        <select name="params[type]">
+                            <option value="">Все</option>
+                            {% for type, value in types %}
+                                <option value="{{ value }}" {{ search.params.type == value ? 'selected="selected"' : '' }}>{{ type }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        Местоположение:
+                        <select name="params[kladrId]">
+                            <option value="">Все</option>
+                            {% for location, kladrId in locations %}
+                                <option value="{{ kladrId }}" {{ search.params.kladrId == kladrId ? 'selected="selected"' : '' }}>{{ location }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        Цена:
+                        с <input name="params[priceFrom]" type="text" value="{{ search.params.priceFrom }}">
+                        по <input name="params[priceTo]" type="text" value="{{ search.params.priceTo }}">
+                    </div>
+                </div>
+            </fieldset>
+            <div>
+                <input type="submit" value="{{ search.id ? 'Сохранить' :  'Создать'}}">
+            </div>
+        </form>
+    </body>
+</html>
