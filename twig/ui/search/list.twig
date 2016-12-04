@@ -2,53 +2,65 @@
 <html>
     <head>
         <title></title>
-        <link rel="stylesheet" href="css/style.css">
         <base href="{{ baseHref }}">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="bootstrap/css/bootstrap.min.css">
+        <link rel="stylesheet" href="css/style.css">
+        <script src="js/jquery-3.1.1.min.js"></script>
+        <script src="bootstrap/js/bootstrap.min.js"></script>
     </head>
     <body>
-        <h4><a href="search">Создать поиск</a></h4>
-
-        {% if searches | length > 0 %}
-            <table>
-                <thead>
-                    <th>Название</th>
-                    <th>Время последнего выполнения</th>
-                    <th>Время следующего выполнения</th>
-                    <th></th>
-                </thead>
-                <tbody>
-                    {% for search in searches %}
-                        <tr>
-                            <td class="searchName">{{ search.name }}</td>
-                            <td>{{ search.last_execution ? search.last_execution|date("Y-m-d H:i:s") : 'Поиск еще не выполнялся' }}</td>
-                            <td>{{ search.next_execution ? search.next_execution|date("Y-m-d H:i:s") : 'Период выполнения не задан'}}</td>
-                            <td>
-                                <a href="search?action=edit&id={{ search.id }}">Редактировать</a>
-                                <a class="deleteSearch" data-searchId ="{{ search.id }}" href="javascript:void(0);">Удалить</a>
-                            </td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        {% endif %}
+        <div class="navbar">
+            <div class="navbar-inner">
+                <div class="container">
+                    <ul class="nav">
+                        <li class="active"><a href="./">Главная</a></li>
+                        <li><a href="search">Создать поиск</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="container">
+            {% if searches | length > 0 %}
+                <table class="table table-bordered table-hover table-condensed">
+                    <thead>
+                        <th>Название</th>
+                        <th>Время последнего выполнения</th>
+                        <th>Время следующего выполнения</th>
+                        <th></th>
+                    </thead>
+                    <tbody>
+                        {% for search in searches %}
+                            <tr>
+                                <td class="searchName">{{ search.name }}</td>
+                                <td>{{ search.last_execution ? search.last_execution|date("Y-m-d H:i:s") : 'Поиск еще не выполнялся' }}</td>
+                                <td>{{ search.next_execution ? search.next_execution|date("Y-m-d H:i:s") : 'Период выполнения не задан'}}</td>
+                                <td>
+                                    <a href="search?action=edit&id={{ search.id }}">Редактировать</a>
+                                    <a class="deleteSearch" data-searchid ="{{ search.id }}" href="javascript:void(0);">Удалить</a>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% endif %}
+        </div>
 
         <form id="form" style="display:none" action=""></form>
 
         <script>
-            var deleteLinks = document.querySelectorAll('.deleteSearch');
-            if (deleteLinks.length) {
-                for (var i = 0; i < deleteLinks.length; i++) {
-                    deleteLinks[i].onclick = function() {
-                        if (!confirm('Удалить поиск "' + this.parentNode.parentNode.querySelector('.searchName').textContent + '"?')) {
-                            return;
-                        }
-                        var form = document.querySelector('#form');
-                        form.action = 'search?action=delete&id=' + this.getAttribute('data-searchId');
-                        form.method = 'post';
-                        form.submit();
+            $(function() {
+                $(document).on('click', '.deleteSearch', function() {
+                    if (!confirm('Удалить поиск "' + $(this).parents('tr').find('.searchName').text() + '"?')) {
+                        return;
                     }
-                }
-            };
+
+                    var form = $('#form');
+                    form.attr('action', 'search?action=delete&id=' + $(this).data('searchid'));
+                    form.attr('method', 'post');
+                    form.submit();
+                });
+            });
         </script>
     </body>
 </html>

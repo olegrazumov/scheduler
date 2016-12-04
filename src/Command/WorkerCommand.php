@@ -12,7 +12,11 @@ class WorkerCommand extends \CLIFramework\Command
 
     const CADNUMBER_PATTERN = '\d+:\d+:\d+:\d+';
     const CONNUMBER_PATTERN = '\d+-\d+-\d+\/\d+\/\d+-\d+';
+    const VINNUMBER_PATTERN = '[A-ZА-Я0-9]{11}\d{6}';
+
     const SHARE_PROPERTY_PATTERN = 'дол(я|и|евой)';
+
+    const PTYPE_CAR = '1';
 
     const TORGI_URL = 'https://torgi.gov.ru';
     const TORGI_INIT_URL = 'https://torgi.gov.ru/lotSearch1.html?bidKindId=13';
@@ -26,10 +30,13 @@ class WorkerCommand extends \CLIFramework\Command
     const REESTR_INIT_URL = 'https://rosreestr.ru/wps/portal/p/cc_ib_portal_services/online_request';
 
     const AVITO_URL = 'https://www.avito.ru';
-    const AVITO_SEARCH_URL = 'https://www.avito.ru/rossiya/kvartiry/prodam';
+    const AVITO_SEARCH_REALTY_URL = 'https://www.avito.ru/rossiya/kvartiry/prodam';
+    const AVITO_SEARCH_CAR_URL = 'https://www.avito.ru/rossiya/avtomobili';
 
-    CONST GOOGLE_URL = 'https://www.google.ru';
-    CONST GOOGLE_MAPS_SEARCH_URL = 'https://www.google.ru/maps/search';
+    const GOOGLE_URL = 'https://www.google.ru';
+    const GOOGLE_MAPS_SEARCH_URL = 'https://www.google.ru/maps/search';
+
+    const VIN_AUTO_URL = 'http://vin.auto.ru/resolve.html';
 
     protected static $curlOptions = [
         CURLOPT_FOLLOWLOCATION => true,
@@ -62,9 +69,18 @@ class WorkerCommand extends \CLIFramework\Command
         170 => 14001, 180 => 14002, 190 => 14003, 200 => 14004,
     ];
 
+    protected static $avitoCarYearsParams = [
+        1960 => 771, 1970 => 782, 1980 => 873, 1985 => 878, 1990 => 883, 1991 => 884,
+        1992 => 885, 1993 => 886, 1994 => 887, 1995 => 888, 1996 => 889, 1997 => 890,
+        1998 => 891, 1999 => 892, 2000 => 893, 2001 => 894, 2002 => 895, 2003 => 896,
+        2004 => 897, 2005 => 898, 2006 => 899, 2007 => 900, 2008 => 901, 2009 => 902,
+        2010 => 2844, 2011 => 2845, 2012 => 6045, 2013 => 8581, 2014 => 11017, 2015 => 13978,
+        2016 => 16381,
+    ];
+
     protected static $filterAddressKeywords = [
         'кв.', 'товарищество', 'тов.', 'помещение', 'пом.', 'район', 'р-н', 'снт',
-        'участок', 'уч.', 'с/с',
+        'участок', 'уч.', 'с/с', 'мкр',
     ];
 
     protected $torgiCookies = [];
@@ -109,16 +125,22 @@ class WorkerCommand extends \CLIFramework\Command
             $lot['gmapsUrl'] = $this->getGoogleMapsUrl($lot);
 
             foreach ($lot['matches'] as $lotNumber) {
-                $reestrData = $this->getReestrData($lotNumber);
+                if (preg_match('/' . self::VINNUMBER_PATTERN . '/', $lotNumber, $vinMatch)) {
+                    $lot['car'] = $this->parseCarData($vinMatch[0], $lot);
+                } else {
+                    $reestrData = $this->getReestrData($lotNumber);
 
-                if ($reestrData) {
-                    $lot['reestr'][$lotNumber] = $reestrData;
+                    if ($reestrData) {
+                        $lot['reestr'][$lotNumber] = $reestrData;
+                    }
                 }
-
-                usleep(mt_rand(500000, 1000000));
             }
 
-            $lot['avito'] = $this->getAvitoData($lot);
+            if (!empty($lot['car'])) {
+                $lot['avito'] = $this->getAvitoCarData($lot);
+            } elseif ([self::PTYPE_CAR] != $search['params']['type']) {
+                $lot['avito'] = $this->getAvitoRealtyData($lot);
+            }
 
             if ($lot['reestr'] && !$this->isShareProperty($lot)) {
                 $result['foundedObjects'][$lot['info']['propertyType']][] = $lot;
@@ -128,6 +150,8 @@ class WorkerCommand extends \CLIFramework\Command
 
             usleep(mt_rand(1000000, 2000000));
         }
+
+        $this->closeCurl();
 
         foreach ($result as &$resultByType) {
             foreach ($resultByType as &$lotsByPropertyType) {
@@ -140,7 +164,7 @@ class WorkerCommand extends \CLIFramework\Command
 
                     $lot['cadDelta'] = $lot['cadSum'] - $lot['info']['startPrice'];
 
-                    if ($lot['avito']) {
+                    if (isset($lot['avito']['avitoPrice'])) {
                         $lot['avito']['avitoDelta'] = $lot['avito']['avitoPrice'] - $lot['info']['startPrice'];
                     }
                 }
@@ -155,7 +179,7 @@ class WorkerCommand extends \CLIFramework\Command
 
         foreach ($result['notFoundedObjects'] as &$lotsByPropertyType) {
             usort($lotsByPropertyType, function($a, $b) {
-                if (!array_key_exists('avitoDelta', $a['avito']) || !array_key_exists('avitoDelta', $b['avito'])) {
+                if (!isset($a['avito']['avitoDelta']) || !isset($b['avito']['avitoDelta'])) {
                     return 1;
                 }
 
@@ -209,7 +233,50 @@ class WorkerCommand extends \CLIFramework\Command
         return $result;
     }
 
-    protected function getAvitoData(array $lot)
+    protected function getAvitoCarData(array $lot)
+    {
+        $result = [];
+
+        $queryParams = [
+            's' => 1,
+        ];
+
+        if (array_key_exists('year', $lot['car'])) {
+            foreach (array_reverse(self::$avitoCarYearsParams, true) as $minYear => $minYearParam) {
+                if ($minYear <= (int)$lot['car']['year']) {
+                    $yearQuery = '188_' . $minYearParam;
+                    foreach (self::$avitoCarYearsParams as $maxYear => $maxYearParam) {
+                        if ($maxYear >= (int)$lot['car']['year']) {
+                            $yearQuery .= 'b' . $maxYearParam;
+                            break;
+                        }
+                    }
+                    $queryParams['f'] = $yearQuery;
+                    break;
+                }
+            }
+        }
+
+        $queryParams['q'] = (isset($lot['car']['brand']) ? $lot['car']['brand'] : '') . ' ' . (isset($lot['car']['model']) ? $lot['car']['model'] : '');
+
+        if (!$queryParams['q']) {
+            return $result;
+        }
+
+        $searchUrl = self::AVITO_SEARCH_CAR_URL . '?' . http_build_query($queryParams);
+        $response = $this->loadUrl($searchUrl);
+        $crawler = new Crawler($response);
+        $searchResult = $crawler->filter('.item_table .about');
+
+        if ($searchResult->count()) {
+            $result['avitoPrice'] = (float)str_replace(' ', '', $crawler->filter('.item_table .about')->eq(0)->text());
+            $result['avitoUrl'] = $searchUrl;
+        } 
+
+        return $result;
+    }
+
+    protected function getAvitoRealtyData(array $lot)
     {
         $result = [];
 
@@ -235,9 +302,9 @@ class WorkerCommand extends \CLIFramework\Command
             }
         }
 
-        foreach ([$this->filterAddress($lot['info']['locationFull']), $lot['info']['locationFull'], $lot['info']['location']] as $address) {
+        foreach ([$this->filterAddress($lot['info']['locationFull']), $lot['info']['location']] as $address) {
             $queryParams['q'] = $address;
-            $searchUrl = self::AVITO_SEARCH_URL . '?' . http_build_query($queryParams);
+            $searchUrl = self::AVITO_SEARCH_REALTY_URL . '?' . http_build_query($queryParams);
             $response = $this->loadUrl($searchUrl);
             $crawler = new Crawler($response);
             $searchResult = $crawler->filter('.item_table .about');
@@ -254,12 +321,38 @@ class WorkerCommand extends \CLIFramework\Command
         return $result;
     }
 
+    protected function parseCarData($vin, array $lot)
+    {
+        $result = [];
+
+        $crawler = new Crawler($this->loadUrl(self::VIN_AUTO_URL . '?vin=' . $vin));
+
+        if ($crawler->filter('.def-list.md')->count()) {
+            $dataNode = $crawler->filter('.def-list.md')->last();
+            $index = 0;
+            $dataNode->filter('dt')->each(function(Crawler $node) use (&$result, &$index, $dataNode) {
+                if (false !== mb_strpos($node->text(), 'Марка')) {
+                    $result['brand'] = trim($dataNode->filter('dd')->eq($index)->text());
+                } elseif (false !== mb_strpos($node->text(), 'Модельный год')) {
+                    $result['year'] = trim($dataNode->filter('dd')->eq($index)->text());
+                } elseif (false !== mb_strpos($node->text(), 'Период производства') && empty($result['year']) && preg_match('/\d{4}/', trim($dataNode->filter('dd')->eq($index)->text()), $yearMatch)) {
+                    $result['year'] = $yearMatch[0];
+                } elseif (false !== mb_strpos($node->text(), 'Модель')) {
+                    $result['model'] = trim($dataNode->filter('dd')->eq($index)->text());
+                }
+                $index++;
+            });
+        }
+
+        return $result;
+    }
+
     protected function searchLots(array $search = [])
     {
         $result = [];
         $searchParams = $search['params'];
 
-        $this->loadUrl(self::TORGI_INIT_URL, ['curl' => [CURLOPT_FOLLOWLOCATION => false]]);
+        $this->loadUrl(self::TORGI_INIT_URL, ['curl' => [CURLOPT_FOLLOWLOCATION => false, CURLOPT_COOKIE => 'JSESSIONID=']]);
         $this->loadUrl(str_replace('%JSESSIONID%', $this->torgiCookies['JSESSIONID'], self::TORGI_INIT_SEARCH_URL));
 
         if ($searchParams['type']) {
@@ -329,7 +422,7 @@ class WorkerCommand extends \CLIFramework\Command
                     return;
                 }
 
-                preg_match_all('/' . self::CADNUMBER_PATTERN . '|' . self::CONNUMBER_PATTERN . '/', $node->text(), $matches);
+                preg_match_all('/' . self::CADNUMBER_PATTERN . '|' . self::CONNUMBER_PATTERN . '|' . self::VINNUMBER_PATTERN . '/u', $node->text(), $matches);
 
                 $lot = [
                     'searchId' => $search['id'],
@@ -543,5 +636,11 @@ class WorkerCommand extends \CLIFramework\Command
         }
 
         return trim(str_replace(',', '', $result));
+    }
+
+    protected function closeCurl()
+    {
+        curl_close($this->ch);
+        $this->ch = null;
     }
 }

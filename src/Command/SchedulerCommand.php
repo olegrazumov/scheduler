@@ -16,9 +16,14 @@ class SchedulerCommand extends \CLIFramework\Command
 
         foreach ($searches as $search) {
             $search['params'] = json_decode($search['params'], true);
-            $cron = Cron::factory($search['params']['period']);
 
-            if ($search['last_execution'] < $cron->getPreviousRunDate()->getTimestamp()) {
+            try {
+                $cronDate = Cron::factory($search['params']['period'])->getPreviousRunDate();
+            } catch (\Exception $e) {
+                $cronDate = false;
+            }
+
+            if ($cronDate && $search['last_execution'] < $cronDate->getTimestamp()) {
                 $this->getApplication()->getCommand('worker')->executeWrapper([$search]);
                 $db->query('UPDATE search_scheduler SET last_execution = (?) WHERE id = (?)', [time(), $search['id']]);
             }

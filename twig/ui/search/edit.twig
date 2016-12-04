@@ -2,45 +2,58 @@
 <html>
     <head>
         <title></title>
-        <link rel="stylesheet" href="css/style.css">
         <base href="{{ baseHref }}">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="bootstrap/css/bootstrap.min.css">
+        <link rel="stylesheet" href="css/style.css">
+        <script src="js/jquery-3.1.1.min.js"></script>
+        <script src="bootstrap/js/bootstrap.min.js"></script>
     </head>
     <body>
-        <h4><a href="./">Главная</a></h4>
-        <form action="" method="post">
-            <input name="id" type="hidden" value="{{ search.id }}">
-            <fieldset>
-                <legend>
-                    {% if search.id %}
-                        {{ search.name }}
-                    {% else %}
-                        Новый поиск
-                    {% endif %}
-                </legend>
-                <div class="formBlock">
-                    <div>
+        <div class="navbar">
+            <div class="navbar-inner">
+                <div class="container">
+                    <ul class="nav">
+                        <li><a href="./">Главная</a></li>
+                        <li><a href="search">Создать поиск</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="container">
+            <form id="editFrom" class="form-horizontal" action="" method="post">
+                <input name="id" type="hidden" value="{{ search.id }}">
+                <fieldset>
+                    <legend>
+                        {% if search.id %}
+                            Редактирование поиска "{{ search.name }}"
+                        {% else %}
+                            Новый поиск
+                        {% endif %}
+                    </legend>
+                    <div class="control-group">
                         Название:
                         <input name="name" type="text" value="{{ search.name }}">
                     </div>
-                    <div>
+                    <div class="control-group">
                         Получатель:
                         <input name="params[emails]" type="text" value="{{ search.params.emails }}">
                     </div>
-                    <div>
+                    <div class="control-group">
                         Период отправки:
                         <select name="params[period]">
                             <option></option>
                             {% for period, value in periods %}
                                 <option value="{{ value }}" {{ search.params.period == value ? 'selected="selected"' : '' }}>{{ period }}</option>
                             {% endfor %}
+                            <option value="cron" {% if search.params.period and search.params.period not in periods %} selected="selected" {% endif %}>Ввести период в формате CRON</option>
                         </select>
+                        <input name="cronExpression" type="text" style="{% if not search.params.period or search.params.period in periods %} display: none; {% endif %}" {% if not search.params.period or search.params.period not in periods %} value="{{ search.params.period }}" {% endif %}>
                     </div>
-                </div>
-            </fieldset>
-            <fieldset>
-                <legend>Параметры поиска</legend>
-                <div class="formBlock">
-                    <div>
+                </fieldset>
+                <fieldset>
+                    <legend>Параметры поиска</legend>
+                    <div class="control-group">
                         Статус:
                         <select name="params[status]">
                             <option value="">Все</option>
@@ -49,7 +62,7 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div>
+                    <div class="control-group">
                         Тип имущества:
                         <select name="params[type]">
                             <option value="">Все</option>
@@ -58,7 +71,7 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div>
+                    <div class="control-group">
                         Местоположение:
                         <select name="params[kladrId]">
                             <option value="">Все</option>
@@ -67,16 +80,27 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div>
+                    <div class="control-group">
                         Цена:
                         с <input name="params[priceFrom]" type="text" value="{{ search.params.priceFrom }}">
                         по <input name="params[priceTo]" type="text" value="{{ search.params.priceTo }}">
                     </div>
+                </fieldset>
+                <div>
+                    <input class="btn" type="submit" value="{{ search.id ? 'Сохранить' :  'Создать'}}">
                 </div>
-            </fieldset>
-            <div>
-                <input type="submit" value="{{ search.id ? 'Сохранить' :  'Создать'}}">
-            </div>
-        </form>
+            </form>
+        </div>
+        <script>
+            $(function() {
+                $(document).on('change', 'select[name="params[period]"]', function() {
+                    if ('cron' === $(this).val()) {
+                        $('input[name=cronExpression]').show();
+                    } else {
+                        $('input[name=cronExpression]').val('').hide();
+                    }
+                });
+            });
+        </script>
     </body>
 </html>

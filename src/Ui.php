@@ -8,9 +8,6 @@ class Ui
 {
     const TWIG_DIR = '/../twig/ui';
 
-    const SEARCH_STATUS_NOT_ACTIVE = 0;
-    const SEARCH_STATUS_ACTIVE = 1;
-
     protected static $searchLocations = [
         'Москва' => 180691,
         'Московская область' => 93644,
@@ -19,6 +16,8 @@ class Ui
     protected static $searchPropertyTypes = [
         'Недвижимость' => '9,8,35,34,33,32,31,30,29,28,27,26,25,24,23,22,21,20,19,18,17,16,15,14,13,12,11,10',
         'Квартиры' => '21',
+        'Недвижимость (иное)' => '20',
+        'Движимое имущество (автотранспорт)' => '1',
     ];
 
     protected static $searchPeriods = [
@@ -59,11 +58,11 @@ class Ui
     public function __construct(\Zend\Diactoros\ServerRequest $request)
     {
         $this->request = $request;
+        $this->basePath = \Web\Config::get('ui')['basePath'];
     }
 
     public function run()
     {
-$this->basePath = \Web\Config::get('ui')['basePath'];
         $uri = str_replace($this->basePath, '/', $this->request->getUri()->getPath());
 
         switch ($uri) {
@@ -87,8 +86,15 @@ $this->basePath = \Web\Config::get('ui')['basePath'];
 
         foreach ($searches as &$search) {
             $search['params'] = json_decode($search['params'], true);
-            if ($search['params']['period']) {
-                $search['next_execution'] = \Cron\CronExpression::factory($search['params']['period'])->getPreviousRunDate()->getTimestamp();
+
+            try {
+                $cronDate = \Cron\CronExpression::factory($search['params']['period'])->getNextRunDate();
+            } catch (\Exception $e) {
+                $cronDate = false;
+            }
+
+            if ($search['params']['period'] && $cronDate) {
+                $search['next_execution'] = $cronDate->getTimestamp();
             }
         }
 
@@ -133,6 +139,11 @@ $this->basePath = \Web\Config::get('ui')['basePath'];
             $searchData = $this->request->getParsedBody();
             $searchData['params']['emails'] = explode(',', $searchData['params']['emails']);
             $searchData['params']['type'] = explode(',', $searchData['params']['type']);
+
+            if ($searchData['cronExpression']) {
+                $searchData['params']['period'] = $searchData['cronExpression'];
+            }
+
             $searchData['params'] = json_encode($searchData['params']);
 
             if ($searchData['id']) {
