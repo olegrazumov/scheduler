@@ -24,8 +24,9 @@ class SchedulerCommand extends \CLIFramework\Command
             }
 
             if ($cronDate && $search['last_execution'] < $cronDate->getTimestamp()) {
+                $db->query('UPDATE search_scheduler SET status = 0 WHERE id = (?)', [$search['id']]);
                 $this->getApplication()->getCommand('worker')->executeWrapper([$search]);
-                $db->query('UPDATE search_scheduler SET last_execution = (?) WHERE id = (?)', [time(), $search['id']]);
+                $db->query('UPDATE search_scheduler SET last_execution = (?), status = 1 WHERE id = (?)', [time(), $search['id']]);
             }
         }
     }
