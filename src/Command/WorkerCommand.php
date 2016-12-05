@@ -46,7 +46,7 @@ class WorkerCommand extends \CLIFramework\Command
         CURLOPT_COOKIEFILE => '/tmp/curl_cookie',
         CURLOPT_USERAGENT => 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:50.0) Gecko/20100101 Firefox/50.0',
         CURLOPT_HEADERFUNCTION => [self::class, 'parseHeaders'],
-        CURLOPT_VERBOSE => true,
+//        CURLOPT_VERBOSE => true,
 //        CURLOPT_PROXY => 'socks5://37.57.117.41:45554',
 //        CURLOPT_SSL_VERIFYHOST => false,
 //        CURLOPT_SSL_VERIFYPEER => false,
