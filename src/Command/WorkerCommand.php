@@ -259,7 +259,7 @@ class WorkerCommand extends \CLIFramework\Command
 
         $queryParams['q'] = (isset($lot['car']['brand']) ? $lot['car']['brand'] : '') . ' ' . (isset($lot['car']['model']) ? $lot['car']['model'] : '');
 
-        if (!$queryParams['q']) {
+        if (!trim($queryParams['q'])) {
             return $result;
         }
 
@@ -314,7 +314,7 @@ class WorkerCommand extends \CLIFramework\Command
                 $result['avitoUrl'] = $searchUrl;
                 break;
             } else {
-                usleep(mt_rand(3000000, 4000000));
+                usleep(mt_rand(2000000, 3000000));
             }
         }
 
@@ -340,7 +340,7 @@ class WorkerCommand extends \CLIFramework\Command
                 } elseif (false !== mb_strpos($node->text(), 'Период производства') && empty($result['year']) && preg_match('/\d{4}/', trim($dataNode->filter('dd')->eq($index)->text()), $yearMatch)) {
                     $result['year'] = $yearMatch[0];
                 } elseif (false !== mb_strpos($node->text(), 'Модель')) {
-                    $result['model'] = trim($dataNode->filter('dd')->eq($index)->text());
+                    $result['model'] = preg_replace('/значение не определено/ui', '', trim($dataNode->filter('dd')->eq($index)->text()));
                 }
                 $index++;
             });
