@@ -323,7 +323,9 @@ class WorkerCommand extends \CLIFramework\Command
 
     protected function parseCarData($vin, array $lot)
     {
-        $result = [];
+        $result = [
+            'vin' => $vin,
+        ];
 
         $crawler = new Crawler($this->loadUrl(self::VIN_AUTO_URL . '?vin=' . $vin));
 
