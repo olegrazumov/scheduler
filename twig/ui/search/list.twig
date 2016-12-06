@@ -33,7 +33,7 @@
                         {% for search in searches %}
                             <tr>
                                 <td class="searchName">{{ search.name }}</td>
-                                <td>{{ search.last_execution ? search.last_execution|date("Y-m-d H:i:s") : 'Поиск еще не выполнялся' }}</td>
+                                <td>{{ search.lastExecution ? search.lastExecution|date("Y-m-d H:i:s") : 'Поиск еще не выполнялся' }}</td>
                                 <td>{{ search.next_execution ? search.next_execution|date("Y-m-d H:i:s") : 'Период выполнения не задан'}}</td>
                                 <td>
                                     <a href="search?action=edit&id={{ search.id }}">Редактировать</a>

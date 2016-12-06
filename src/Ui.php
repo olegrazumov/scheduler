@@ -166,7 +166,7 @@ class Ui
         ];
 
         if ($id) {
-            $sql = 'SELECT id, name, params, status, last_execution FROM search_scheduler WHERE id = (?)';
+            $sql = 'SELECT id, name, params, status, lastExecution FROM search_scheduler WHERE id = (?)';
             $search = $this->getDb()->query($sql, [$id])->current();
             $search['params'] = json_decode($search['params'], true);
             $search['params']['emails'] = implode(', ', $search['params']['emails']);
@@ -182,6 +182,8 @@ class Ui
     {
         if ('POST' === $this->request->getMethod()) {
             $sql = 'DELETE FROM search_scheduler WHERE id = (?)';
+            $this->getDb()->query($sql, [$id]);
+            $sql = 'DELETE FROM search_history WHERE searchId = (?)';
             $this->getDb()->query($sql, [$id]);
 
             return $this->redirect('./');
@@ -205,7 +207,7 @@ class Ui
      */
     protected function getSearches()
     {
-        $sql = 'SELECT id, name, params, status, last_execution FROM search_scheduler';
+        $sql = 'SELECT id, name, params, status, lastExecution FROM search_scheduler';
         $result = $this->getDb()->query($sql, DbAdapter::QUERY_MODE_EXECUTE)->toArray();
 
         return $result;

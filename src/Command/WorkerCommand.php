@@ -12,7 +12,7 @@ class WorkerCommand extends \CLIFramework\Command
 
     const CADNUMBER_PATTERN = '\d+:\d+:\d+:\d+';
     const CONNUMBER_PATTERN = '\d+-\d+-\d+\/\d+\/\d+-\d+';
-    const VINNUMBER_PATTERN = '[A-ZА-Я0-9]{11}\d{6}';
+    const VINNUMBER_PATTERN = '[A-ZА-Я0-9]{12}\d{5}';
 
     const SHARE_PROPERTY_PATTERN = 'дол(я|и|евой)';
 
@@ -46,12 +46,12 @@ class WorkerCommand extends \CLIFramework\Command
         CURLOPT_COOKIEFILE => '/tmp/curl_cookie',
         CURLOPT_USERAGENT => 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:50.0) Gecko/20100101 Firefox/50.0',
         CURLOPT_HEADERFUNCTION => [self::class, 'parseHeaders'],
-//        CURLOPT_VERBOSE => true,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => false,
+        CURLOPT_SSLVERSION => CURL_SSLVERSION_TLSv1,
+        CURLOPT_SSL_CIPHER_LIST => 'SSLv3',
 //        CURLOPT_PROXY => 'socks5://37.57.117.41:45554',
-//        CURLOPT_SSL_VERIFYHOST => false,
-//        CURLOPT_SSL_VERIFYPEER => false,
-//        CURLOPT_SSLVERSION => CURL_SSLVERSION_TLSv1,
-//        CURLOPT_SSL_CIPHER_LIST => 'SSLv3',
+//        CURLOPT_VERBOSE => true,
     ];
 
     protected static $torgiSearchParams = [
@@ -81,6 +81,11 @@ class WorkerCommand extends \CLIFramework\Command
     protected static $filterAddressKeywords = [
         'кв.', 'товарищество', 'тов.', 'помещение', 'пом.', 'район', 'р-н', 'снт',
         'участок', 'уч.', 'с/с', 'мкр',
+    ];
+
+    protected static $filterLotKeywords = [
+        'прицеп', 'полуприцеп', 'тягач', 'автопогрузчик', 'трактор', 'грузовой', 'экскаватор',
+        'фургон', 'кран', 'автофургон', 'фургон', 'комбайн',
     ];
 
     protected $torgiCookies = [];
@@ -128,6 +133,12 @@ class WorkerCommand extends \CLIFramework\Command
                 if (preg_match('/' . self::VINNUMBER_PATTERN . '/', $lotNumber, $vinMatch)) {
                     $lot['car'] = $this->parseCarData($vinMatch[0], $lot);
                 } else {
+                    foreach (self::$filterLotKeywords as $word) {
+                        if (false !== mb_strpos($lot['shortInfo'], $word)) {
+                            continue 2;
+                        }
+                    }
+
                     $reestrData = $this->getReestrData($lotNumber);
 
                     if ($reestrData) {
@@ -178,13 +189,22 @@ class WorkerCommand extends \CLIFramework\Command
         }
 
         foreach ($result['notFoundedObjects'] as &$lotsByPropertyType) {
-            usort($lotsByPropertyType, function($a, $b) {
-                if (!isset($a['avito']['avitoDelta']) || !isset($b['avito']['avitoDelta'])) {
-                    return 1;
-                }
+            $lotsWithAvitoDelta = [];
+            $lotsWithoutAvitoDelta = [];
 
+            foreach ($lotsByPropertyType as $lotToSort) {
+                if (!isset($lotToSort['avito']['avitoDelta'])) {
+                    $lotsWithoutAvitoDelta[] = $lotToSort;
+                } else {
+                    $lotsWithAvitoDelta[] = $lotToSort;
+                }
+            }
+
+            usort($lotsWithAvitoDelta, function($a, $b) {
                 return $a['avito']['avitoDelta'] < $b['avito']['avitoDelta'] ? 1 : -1;
             });
+
+            $lotsByPropertyType = array_merge($lotsWithAvitoDelta, $lotsWithoutAvitoDelta);
         }
 
         ksort($result['foundedObjects']);
@@ -269,7 +289,17 @@ class WorkerCommand extends \CLIFramework\Command
         $searchResult = $crawler->filter('.item_table .about');
 
         if ($searchResult->count()) {
-            $result['avitoPrice'] = (float)str_replace(' ', '', $crawler->filter('.item_table .about')->eq(0)->text());
+            $prices = [];
+
+            $crawler->filter('.item_table .about')->each(function(Crawler $node) use (&$prices) {
+                if ($node->filter('.param > span')->count() && false !== mb_strpos($node->filter('.param > span')->eq(0)->text(), 'Битый')) {
+                    return;
+                }
+
+                $prices[] = (float)str_replace(' ', '', $node->text());
+            });
+
+            $result['avitoPrice'] = min($prices);
             $result['avitoUrl'] = $searchUrl;
         } 
 
@@ -285,13 +315,20 @@ class WorkerCommand extends \CLIFramework\Command
         ];
 
         $reestrInfo = array_shift($lot['reestr']);
+        $square = false;
 
         if ($reestrInfo && array_key_exists('square', $reestrInfo)) {
+            $square = $reestrInfo['square'];
+        } else {
+            
+        }
+
+        if ($square) {
             foreach (array_reverse(self::$avitoSquareParams, true) as $minSquare => $minSquareParam) {
-                if ($minSquare <= $reestrInfo['square']) {
+                if ($minSquare <= $square) {
                     $squareQuery = '59_' . $minSquareParam;
                     foreach (self::$avitoSquareParams as $maxSquare => $maxSquareParam) {
-                        if ($maxSquare >= $reestrInfo['square']) {
+                        if ($maxSquare >= $square) {
                             $squareQuery .= 'b' . $maxSquareParam;
                             break;
                         }
@@ -469,19 +506,21 @@ class WorkerCommand extends \CLIFramework\Command
 
         $reestrInitResponse = $this->loadUrl(self::REESTR_INIT_URL);
         $reestrInitCrawler= new Crawler($reestrInitResponse);
-        $reestrSearchUrl = self::REESTR_URL . $reestrInitCrawler->filter('form')->eq(1)->attr('action');
+        $reestrBaseUrl = $reestrInitCrawler->filter('base')->count() ? $reestrInitCrawler->filter('base')->attr('href') : self::REESTR_URL;
+        $reestrSearchUrl = $reestrBaseUrl . $reestrInitCrawler->filter('form')->eq(1)->attr('action');
         $reestrSearchResponse = $this->loadUrl($reestrSearchUrl, ['curl' => [
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => http_build_query($postData),
         ]]);
         $reestrSearchCrawler = new Crawler($reestrSearchResponse);
-        $reestrSearchResults = $reestrSearchCrawler->filter('tr[id$=_js_oTr0] a');
-
+        $reestrSearchResults = $reestrSearchCrawler->filter('tr[id$=js_oTr0] a');
         $reestr = [];
+
         if ($reestrSearchResults->count()) {
-            $reestrInfoUrl = self::REESTR_URL . $reestrSearchResults->attr('href');
+            $reestrInfoUrl = $reestrBaseUrl . $reestrSearchResults->attr('href');
             $reestrInfoResponse = $this->loadUrl($reestrInfoUrl);
-            $reestrInfoCrawler = new Crawler($reestrInfoResponse);
+            $reestrInfoCrawler = new Crawler;
+            $reestrInfoCrawler->addHtmlContent($reestrInfoResponse);
             $reestrInfoCrawler->filter('tr')->each(function($node) use (&$reestr) {
                 if (false !== mb_strpos($node->text(), 'Площадь')) {
                     $reestr['square'] = trim($node->filter('td')->eq(1)->text());

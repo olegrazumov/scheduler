@@ -44,7 +44,7 @@ CREATE TABLE `search_scheduler` (
   `name` varchar(255) NOT NULL,
   `params` text NOT NULL,
   `status` tinyint(4) NOT NULL DEFAULT '1',
-  `last_execution` int(11) NOT NULL DEFAULT '0'
+  `lastExecution` int(11) NOT NULL DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 --
