@@ -24,8 +24,11 @@ class SchedulerCommand extends \CLIFramework\Command
             }
 
             if ($cronDate && $search['lastExecution'] < $cronDate->getTimestamp()) {
-                $this->getApplication()->getCommand('worker')->executeWrapper([$search]);
-                $db->query('UPDATE search_scheduler SET lastExecution = (?) WHERE id = (?)', [time(), $search['id']]);
+                $results = $this->getApplication()->getCommand('worker')->executeWrapper([$search]);
+                $notified = !empty($search['params']['openResultsInBrowser']) ? 0 : 1;
+                $processedObjectsCount = $results['processedObjectsCount'];
+                unset($results['processedObjectsCount']);
+                $db->query('UPDATE search_scheduler SET lastExecution = (?), notified = (?), lastResults = (?), lastProcessedCount = (?) WHERE id = (?)', [time(), $notified, json_encode($results), $processedObjectsCount, $search['id']]);
             }
         }
     }

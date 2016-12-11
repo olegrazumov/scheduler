@@ -26,6 +26,7 @@
                     <thead>
                         <th>Название</th>
                         <th>Время последнего выполнения</th>
+                        <th>Обьектов обработанно</th>
                         <th>Время следующего выполнения</th>
                         <th></th>
                     </thead>
@@ -33,8 +34,9 @@
                         {% for search in searches %}
                             <tr>
                                 <td class="searchName">{{ search.name }}</td>
-                                <td>{{ search.lastExecution ? search.lastExecution|date("Y-m-d H:i:s") : 'Поиск еще не выполнялся' }}</td>
-                                <td>{{ search.next_execution ? search.next_execution|date("Y-m-d H:i:s") : 'Период выполнения не задан'}}</td>
+                                <td>{{ search.lastExecution ? search.lastExecution | date("Y-m-d H:i:s") : 'Поиск еще не выполнялся' }}</td>
+                                <td>{{ search.lastExecution ? search.lastProcessedCount : '' }}</td>
+                                <td>{{ search.next_execution ? search.next_execution | date("Y-m-d H:i:s") : 'Период выполнения не задан' }}</td>
                                 <td>
                                     <a href="search?action=edit&id={{ search.id }}">Редактировать</a>
                                     <a class="deleteSearch" data-searchid ="{{ search.id }}" href="javascript:void(0);">Удалить</a>
@@ -49,6 +51,8 @@
         <form id="form" style="display:none" action=""></form>
 
         <script>
+            var baseHref = '{{ baseHref }}';
+
             $(function() {
                 $(document).on('click', '.deleteSearch', function() {
                     if (!confirm('Удалить поиск "' + $(this).parents('tr').find('.searchName').text() + '"?')) {
@@ -60,7 +64,32 @@
                     form.attr('method', 'post');
                     form.submit();
                 });
+
+                setInterval(function() {
+                    $.post('notifications', function(data) {
+                        for (var key in data) {
+                            var results = JSON.parse(data[key]['lastResults']);
+
+                            for (var type in results) {
+                                notify('search?action=results&id=' + data[key]['id'] + '&type=' + type, results[type]['subject']);
+                            }
+                        }
+
+                        if (data.length) {
+                            window.location.reload();
+                        }
+                    });
+                }, 3000);
             });
+
+            function notify(url, subject) {
+                var newWindow = window.open(url);
+                $(newWindow).on('load', function() {
+                    newWindow.document.title = subject;
+                    $(newWindow.document).contents().find('title').text(subject);
+                    $(newWindow.document).contents().find('table').before('<h4>' + subject + '</h4>');
+                });
+            }
         </script>
     </body>
 </html>

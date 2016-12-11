@@ -74,6 +74,10 @@ class Ui
                 $this->searchAction();
                 break;
 
+            case '/notifications':
+                $this->notificationsAction();
+                break;
+
             default:
                 $this->notFoundAction();
 
@@ -101,7 +105,6 @@ class Ui
         $html = $this->getTwig()->render('search/list.twig', ['searches' => $searches, 'baseHref' => $this->basePath]);
         $this->emitResponse(new \Zend\Diactoros\Response\HtmlResponse($html));
     }
-    
 
     protected function searchAction()
     {
@@ -125,6 +128,12 @@ class Ui
             case 'delete':
                 if (array_key_exists('id', $params)) {
                     $this->deleteSearch($params['id']);
+                }
+                break;
+
+            case 'results':
+                if (array_key_exists('id', $params) && array_key_exists('type', $params)) {
+                    $this->showResults($params['id'], $params['type']);
                 }
                 break;
 
@@ -178,6 +187,15 @@ class Ui
         $this->emitResponse(new \Zend\Diactoros\Response\HtmlResponse($html));
     }
 
+    protected function showResults($id, $type)
+    {
+        $sql = 'SELECT lastResults FROM search_scheduler WHERE id = (?)';
+        $search = $this->getDb()->query($sql, [$id])->current();
+        $lastResults = json_decode($search['lastResults'], true);
+        $html = array_key_exists($type, $lastResults) ? $lastResults[$type]['html'] : '';
+        $this->emitResponse(new \Zend\Diactoros\Response\HtmlResponse($html));
+    }
+
     protected function deleteSearch($id)
     {
         if ('POST' === $this->request->getMethod()) {
@@ -190,6 +208,18 @@ class Ui
         }
 
         $this->badMethodAction();
+    }
+
+    protected function notificationsAction()
+    {
+        $sql = 'SELECT id, lastResults FROM search_scheduler WHERE notified = 0';
+        $result = $this->getDb()->query($sql, DbAdapter::QUERY_MODE_EXECUTE)->toArray();
+
+        if ($result) {
+            $this->getDb()->query('UPDATE search_scheduler SET notified = 1 WHERE notified = 0', DbAdapter::QUERY_MODE_EXECUTE);
+        }
+
+        $this->emitResponse(new \Zend\Diactoros\Response\JsonResponse($result));
     }
 
     protected function notFoundAction()
@@ -207,7 +237,7 @@ class Ui
      */
     protected function getSearches()
     {
-        $sql = 'SELECT id, name, params, status, lastExecution FROM search_scheduler';
+        $sql = 'SELECT id, name, params, status, lastExecution, lastProcessedCount FROM search_scheduler';
         $result = $this->getDb()->query($sql, DbAdapter::QUERY_MODE_EXECUTE)->toArray();
 
         return $result;

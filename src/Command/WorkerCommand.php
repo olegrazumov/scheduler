@@ -38,6 +38,8 @@ class WorkerCommand extends \CLIFramework\Command
 
     const VIN_AUTO_URL = 'http://vin.auto.ru/resolve.html';
 
+    const CENAMASHIN_URL = 'http://cenamashin.ru/cena';
+
     protected static $curlOptions = [
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_RETURNTRANSFER => true,
@@ -98,22 +100,35 @@ class WorkerCommand extends \CLIFramework\Command
 
     public function execute(array $search)
     {
-        $this->loadSeachHistory($search['id']);
+        $this->loadSearchHistory($search['id']);
         $data = $this->getData($search);
+        $results = ['processedObjectsCount' => 0];
 
-        if ($search['params']['emails']) {
-            if ($data['foundedObjects']) {
-                $msg = $this->getFoundedObjectsMessage($data['foundedObjects']);
-                $msg['subject'] = 'Результат поиска ' . ($search['name'] ? '"' . $search['name'] .'"' : '');
+        if ($data['foundedObjects']) {
+            $msg = $this->getFoundedObjectsMessage($data['foundedObjects']);
+            $msg['subject'] = 'Результат поиска ' . ($search['name'] ? '"' . $search['name'] .'"' : '');
+
+            if (empty($search['params']['openResultsInBrowser'])) {
                 $this->sendMail($search['params']['emails'], $msg);
             }
 
-            if ($data['notFoundedObjects']) {
-                $msg = $this->getNotFoundedObjectsMessage($data['notFoundedObjects']);
-                $msg['subject'] = 'Обьекты, не найденные в Росреестре по поиску ' . ($search['name'] ? '"' . $search['name'] .'"' : '');
-                $this->sendMail($search['params']['emails'], $msg);
-            }
+            $results['foundedObjects'] = $msg;
         }
+
+        if ($data['notFoundedObjects']) {
+            $msg = $this->getNotFoundedObjectsMessage($data['notFoundedObjects']);
+            $msg['subject'] = 'Обьекты, не найденные в Росреестре по поиску ' . ($search['name'] ? '"' . $search['name'] .'"' : '');
+
+            if (empty($search['params']['openResultsInBrowser'])) {
+                $this->sendMail($search['params']['emails'], $msg);
+            }
+
+            $results['notFoundedObjects'] = $msg;
+        }
+
+        $results['processedObjectsCount'] = $data['lotsCount'];
+
+        return $results;
     }
 
     protected function getData(array $search)
@@ -128,17 +143,12 @@ class WorkerCommand extends \CLIFramework\Command
         foreach ($lots as &$lot) {
             $lot['info'] = $this->getLotData($lot['lotUrl']);
             $lot['gmapsUrl'] = $this->getGoogleMapsUrl($lot);
+            $lot['reestr'] = [];
 
             foreach ($lot['matches'] as $lotNumber) {
                 if (preg_match('/' . self::VINNUMBER_PATTERN . '/', $lotNumber, $vinMatch)) {
                     $lot['car'] = $this->parseCarData($vinMatch[0], $lot);
                 } else {
-                    foreach (self::$filterLotKeywords as $word) {
-                        if (false !== mb_strpos($lot['shortInfo'], $word)) {
-                            continue 2;
-                        }
-                    }
-
                     $reestrData = $this->getReestrData($lotNumber);
 
                     if ($reestrData) {
@@ -149,11 +159,12 @@ class WorkerCommand extends \CLIFramework\Command
 
             if (!empty($lot['car'])) {
                 $lot['avito'] = $this->getAvitoCarData($lot);
+                $lot['cenamashin'] = $this->getCenamashinData($lot);
             } elseif ([self::PTYPE_CAR] != $search['params']['type']) {
                 $lot['avito'] = $this->getAvitoRealtyData($lot);
             }
 
-            if ($lot['reestr'] && !$this->isShareProperty($lot)) {
+            if (($lot['reestr'] && !$this->isShareProperty($lot)) || !empty($lot['car']) && (!empty($lot['cenamashin']['cenamashinPrice']) || !empty($lot['avito']['avitoPrice'])) && !$this->isFilteredLot($lot)) {
                 $result['foundedObjects'][$lot['info']['propertyType']][] = $lot;
             } else {
                 $result['notFoundedObjects'][$lot['info']['propertyType']][] = $lot;
@@ -173,19 +184,36 @@ class WorkerCommand extends \CLIFramework\Command
                         $lot['cadSum'] += $lotReestr['cadPrice'];
                     }
 
-                    $lot['cadDelta'] = $lot['cadSum'] - $lot['info']['startPrice'];
-
                     if (isset($lot['avito']['avitoPrice'])) {
                         $lot['avito']['avitoDelta'] = $lot['avito']['avitoPrice'] - $lot['info']['startPrice'];
+                    }
+
+                    if (isset($lot['cenamashin']['cenamashinPrice'])) {
+                        $lot['cadDelta'] = $lot['cenamashin']['cenamashinPrice'] - $lot['info']['startPrice'];
+                    } elseif ($lot['reestr']) {
+                        $lot['cadDelta'] = $lot['cadSum'] - $lot['info']['startPrice'];
                     }
                 }
             }
         }
 
         foreach ($result['foundedObjects'] as &$lotsByPropertyType) {
-            usort($lotsByPropertyType, function($a, $b) {
+            $lotsWithCadDelta = [];
+            $lotsWithoutCadDelta = [];
+
+            foreach ($lotsByPropertyType as $lotToSort) {
+                if (!isset($lotToSort['cadDelta'])) {
+                    $lotsWithoutCadDelta[] = $lotToSort;
+                } else {
+                    $lotsWithCadDelta[] = $lotToSort;
+                }
+            }
+
+            usort($lotsWithCadDelta, function($a, $b) {
                 return $a['cadDelta'] < $b['cadDelta'] ? 1 : -1;
             });
+
+            $lotsByPropertyType = array_merge($lotsWithCadDelta, $lotsWithoutCadDelta);
         }
 
         foreach ($result['notFoundedObjects'] as &$lotsByPropertyType) {
@@ -211,6 +239,8 @@ class WorkerCommand extends \CLIFramework\Command
         ksort($result['notFoundedObjects']);
 
         $this->saveSearchHistory($lots);
+
+        $result['lotsCount'] = count($lots);
 
         return $result;
     }
@@ -371,9 +401,9 @@ class WorkerCommand extends \CLIFramework\Command
             $index = 0;
             $dataNode->filter('dt')->each(function(Crawler $node) use (&$result, &$index, $dataNode) {
                 if (false !== mb_strpos($node->text(), 'Марка')) {
-                    $result['brand'] = trim($dataNode->filter('dd')->eq($index)->text());
+                    $result['brand'] = preg_replace('/значение не определено/ui', '', trim($dataNode->filter('dd')->eq($index)->text()));
                 } elseif (false !== mb_strpos($node->text(), 'Модельный год')) {
-                    $result['year'] = trim($dataNode->filter('dd')->eq($index)->text());
+                    $result['year'] = preg_replace('/значение не определено/ui', '', trim($dataNode->filter('dd')->eq($index)->text()));
                 } elseif (false !== mb_strpos($node->text(), 'Период производства') && empty($result['year']) && preg_match('/\d{4}/', trim($dataNode->filter('dd')->eq($index)->text()), $yearMatch)) {
                     $result['year'] = $yearMatch[0];
                 } elseif (false !== mb_strpos($node->text(), 'Модель')) {
@@ -597,7 +627,7 @@ class WorkerCommand extends \CLIFramework\Command
         return strlen($headerLine);
     }
 
-    protected function loadSeachHistory($searchId)
+    protected function loadSearchHistory($searchId)
     {
         $this->searchHistory[$searchId] = [];
         $db = new DbAdapter(Config::get('db'));
@@ -683,5 +713,47 @@ class WorkerCommand extends \CLIFramework\Command
     {
         curl_close($this->ch);
         $this->ch = null;
+    }
+
+    protected function isFilteredLot(array $lot)
+    {
+        foreach (self::$filterLotKeywords as $word) {
+            if (false !== mb_strpos($lot['shortInfo'], $word)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+
+    protected function getCenamashinData(array $lot)
+    {
+        $result = [];
+
+        if (empty($lot['car']['brand'])) {
+            return $result;
+        }
+
+        $searchUrl = self::CENAMASHIN_URL . '/' . $lot['car']['brand'];
+
+        if (!empty($lot['car']['model'])) {
+            $searchUrl .= '/' . $lot['car']['model'];
+
+            if (!empty($lot['car']['year'])) {
+                $searchUrl .= '/' . $lot['car']['year'];
+            }
+        }
+
+        $response = $this->loadUrl($searchUrl);
+        $crawler = new Crawler($response);
+        $searchResult = $crawler->filter('.cornerText_o font');
+
+        if ($searchResult->count()) {
+            $result['cenamashinPrice'] = (int)preg_filter('/[^\d]/u', '', $searchResult->eq(0)->text());
+            $result['cenamashinUrl'] = $searchUrl;
+        }
+
+        return $result;
     }
 }

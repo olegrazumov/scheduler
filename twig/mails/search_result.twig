@@ -53,15 +53,21 @@
                                 <a href="{{ item.lotUrl }}">{{ item.shortInfo }}</a>
                             </td>
                             <td>
-                                <a href="{{ item.gmapsUrl }}">{{ item.info.locationFull }}</a>
+                                {% if item.car %}
+                                    {{ item.car.year ~ ' ' ~ item.car.brand ~ ' ' ~ item.car.model | trim }}
+                                {% else %}
+                                    <a href="{{ item.gmapsUrl }}">{{ item.info.locationFull }}</a>
+                                {% endif %}
                             </td>
                             <td class="num">
                                 <nobr>{{ item.info.startPrice | number_format(0, '.', '`') }}</nobr>
                             </td>
                             <td class="num">
-                                {% if item.reestr | length > 1 %}
+                                {% if item.cenamashin.cenamashinUrl %}
+                                    <nobr><a href="{{ item.cenamashin.cenamashinUrl }}">{{ item.cenamashin.cenamashinPrice | number_format(0, '.', '`') }}</a></nobr>
+                                {% elseif item.reestr | length > 1 %}
                                     <nobr>{{ item.cadSum | number_format(0, '.', '`') }}</nobr>
-                                    <table style="border: 0; padding: 0;">
+                                    <table style="border: 0; padding: 0; width: 100%;">
                                         {% for number, reestr in item.reestr %}
                                             <tr style="border: 0;">
                                                 <td style="border: 0; text-align: left; padding: 0; padding-right: 3px;">{{ number }} </td>
@@ -85,7 +91,7 @@
                                 {% endif %}
                             </td>
                             <td class="num">
-                                {% if item.reestr %}
+                                {% if item.cadDelta %}
                                     <nobr>{{ item.cadDelta | number_format(0, '.', '`') }}</nobr>
                                 {% endif %}
                             </td>

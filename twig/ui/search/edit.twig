@@ -38,6 +38,10 @@
                     <div class="control-group">
                         Получатель:
                         <input name="params[emails]" type="text" value="{{ search.params.emails }}">
+                        <label style="display: inline;">
+                            <input name="params[openResultsInBrowser]" type="checkbox" style="margin-top: -4px;" {{ search.params.openResultsInBrowser ? 'checked="true"' : '' }}>
+                            Открыть результат в браузере
+                        </label>
                     </div>
                     <div class="control-group">
                         Период отправки:
