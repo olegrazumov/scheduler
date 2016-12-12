@@ -102,7 +102,7 @@ class WorkerCommand extends \CLIFramework\Command
     {
         $this->loadSearchHistory($search['id']);
         $data = $this->getData($search);
-        $results = ['processedObjectsCount' => 0];
+        $results = [];
 
         if ($data['foundedObjects']) {
             $msg = $this->getFoundedObjectsMessage($data['foundedObjects']);
@@ -725,7 +725,6 @@ class WorkerCommand extends \CLIFramework\Command
 
         return false;
     }
-
 
     protected function getCenamashinData(array $lot)
     {
