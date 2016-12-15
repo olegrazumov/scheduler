@@ -38,6 +38,8 @@ class WorkerCommand extends \CLIFramework\Command
 
     const VIN_AUTO_URL = 'http://vin.auto.ru/resolve.html';
 
+    const POGAZAM_URL = 'http://pogazam.ru/vin';
+
     const CENAMASHIN_URL = 'http://cenamashin.ru/cena';
 
     protected static $curlOptions = [
@@ -164,7 +166,7 @@ class WorkerCommand extends \CLIFramework\Command
                 $lot['avito'] = $this->getAvitoRealtyData($lot);
             }
 
-            if (($lot['reestr'] && !$this->isShareProperty($lot)) || !empty($lot['car']) && (!empty($lot['cenamashin']['cenamashinPrice']) || !empty($lot['avito']['avitoPrice'])) && !$this->isFilteredLot($lot)) {
+            if (($lot['reestr'] && !$this->isShareProperty($lot)) || (!empty($lot['cenamashin']['cenamashinPrice'])) && !$this->isFilteredLot($lot)) {
                 $result['foundedObjects'][$lot['info']['propertyType']][] = $lot;
             } else {
                 $result['notFoundedObjects'][$lot['info']['propertyType']][] = $lot;
@@ -238,7 +240,7 @@ class WorkerCommand extends \CLIFramework\Command
         ksort($result['foundedObjects']);
         ksort($result['notFoundedObjects']);
 
-        $this->saveSearchHistory($lots);
+//        $this->saveSearchHistory($lots);
 
         $result['lotsCount'] = count($lots);
 
@@ -392,25 +394,95 @@ class WorkerCommand extends \CLIFramework\Command
     {
         $result = [
             'vin' => $vin,
+            'brand' => '',
+            'year' => '',
+            'model' => '',
         ];
 
-        $crawler = new Crawler($this->loadUrl(self::VIN_AUTO_URL . '?vin=' . $vin));
+        $shortInfo = mb_strtolower($lot['shortInfo']);
+        $pogazamCrawler = new Crawler($this->loadUrl(self::POGAZAM_URL . '/?vin=' . $vin));
+ 
+        if ($pogazamCrawler->filter('#table_result_search tr')->count()) {
+            $resultnum = (int)$pogazamCrawler->filter('#table_result_search tr')->last()->filter('td')->eq(0)->text();
+            $makenum = 1;
 
-        if ($crawler->filter('.def-list.md')->count()) {
-            $dataNode = $crawler->filter('.def-list.md')->last();
-            $index = 0;
-            $dataNode->filter('dt')->each(function(Crawler $node) use (&$result, &$index, $dataNode) {
-                if (false !== mb_strpos($node->text(), 'Марка')) {
-                    $result['brand'] = preg_replace('/значение не определено/ui', '', trim($dataNode->filter('dd')->eq($index)->text()));
-                } elseif (false !== mb_strpos($node->text(), 'Модельный год')) {
-                    $result['year'] = preg_replace('/значение не определено/ui', '', trim($dataNode->filter('dd')->eq($index)->text()));
-                } elseif (false !== mb_strpos($node->text(), 'Период производства') && empty($result['year']) && preg_match('/\d{4}/', trim($dataNode->filter('dd')->eq($index)->text()), $yearMatch)) {
-                    $result['year'] = $yearMatch[0];
-                } elseif (false !== mb_strpos($node->text(), 'Модель')) {
-                    $result['model'] = preg_replace('/значение не определено/ui', '', trim($dataNode->filter('dd')->eq($index)->text()));
-                }
-                $index++;
+            do {
+                $pogazamInfoCrawler = new Crawler($this->loadUrl(self::POGAZAM_URL . '/?vin=' . $vin . ($makenum ? '&makenum=' . $makenum : '')));
+                $brandFound = false;
+                $pogazamInfoCrawler->filter('#table_result_search tr')->each(function(Crawler $node) use (&$result, &$brandFound, $shortInfo, $resultnum) {
+                    if (false !== mb_strpos($node->filter('td')->eq(0)->text(), 'Марка')) {
+                        $brand = mb_strtolower(preg_replace('/значение не определено/ui', '', trim($node->filter('td')->eq(1)->text())));
+                        $brandParts = preg_split('/ -/', $brand);
+                        $partExists = false;
+                        foreach ($brandParts as $part) {
+                            if ($part && false !== mb_strpos($shortInfo, $part)) {
+                                $partExists = true;
+                                break;
+                            }
+                        }
+                        if ($brand && ($partExists || !$resultnum)) {
+                            $result['brand'] = str_replace(' ', '-', $brand);
+                            $brandFound = true;
+                        }
+                    } elseif ($result['brand'] && !$result['year'] && false !== mb_strpos($node->filter('td')->eq(0)->text(), 'Модельный год')) {
+                        $result['year'] = preg_replace('/значение не определено/ui', '', trim($node->filter('td')->eq(1)->text()));
+                    } elseif ($result['brand'] && !$result['year'] && false !== mb_strpos($node->filter('td')->eq(0)->text(), 'Период производства') && empty($result['year']) && preg_match('/\d{4}/', trim($node->filter('td')->eq(1)->text()), $yearMatch)) {
+                        $result['year'] = $yearMatch[0];
+                    } elseif ($result['brand'] && !$result['model'] && false !== mb_strpos($node->filter('td')->eq(0)->text(), 'Модель')) {
+                        $model = mb_strtolower(preg_replace('/значение не определено/ui', '', trim($node->filter('td')->eq(1)->text())));
+                        $modelParts = preg_split('/ \//', $model);
+                        $partExists = false;
+                        foreach ($modelParts as $part) {
+                            if ($part && false !== mb_strpos($shortInfo, $part)) {
+                                $partExists = true;
+                                break;
+                            }
+                        }
+                        if ($model && $brandFound) {
+                            $result['model'] = str_replace(' ', '-', $model);
+                        }
+                    }
+                });
+                $makenum++;
+            } while ($makenum <= $resultnum);
+        }
+
+        if (!$result['brand'] || !$result['model']) {
+            $crawler = new Crawler($this->loadUrl(self::VIN_AUTO_URL . '?vin=' . $vin));
+
+            $crawler->filter('.def-list.md')->each(function(Crawler $dataNode) use (&$result, $shortInfo) {
+                $index = 0;
+                $dataNode->filter('dt')->each(function(Crawler $node) use (&$result, &$index, $dataNode, $shortInfo) {
+                    if (!$result['brand'] && false !== mb_strpos($node->text(), 'Марка')) {
+                        $brand = mb_strtolower(preg_replace('/значение не определено/ui', '', trim($dataNode->filter('dd')->eq($index)->text())));
+                        if ($brand && false !== mb_strpos($shortInfo, $brand)) {
+                            $result['brand'] = str_replace(' ', '-', $brand);
+                        }
+                    } elseif (!$result['year'] && false !== mb_strpos($node->text(), 'Модельный год')) {
+                        $result['year'] = preg_replace('/значение не определено/ui', '', trim($dataNode->filter('dd')->eq($index)->text()));
+                    } elseif (!$result['year'] && false !== mb_strpos($node->text(), 'Период производства') && empty($result['year']) && preg_match('/\d{4}/', trim($dataNode->filter('dd')->eq($index)->text()), $yearMatch)) {
+                        $result['year'] = $yearMatch[0];
+                    } elseif (!$result['model'] && false !== mb_strpos($node->text(), 'Модель')) {
+                        $model = mb_strtolower(preg_replace('/значение не определено/ui', '', trim($dataNode->filter('dd')->eq($index)->text())));
+                        $modelParts = explode(' ', $model);
+                        $partExists = false;
+                        foreach ($modelParts as $part) {
+                            if ($part && false !== mb_strpos($shortInfo, $part)) {
+                                $partExists = true;
+                                break;
+                            }
+                        }
+                        if ($model && $partExists) {
+                            $result['model'] = str_replace(' ', '-', $model);
+                        }
+                    }
+                    $index++;
+                });
             });
+        }
+
+        if (!$result['year'] && preg_match('/\D*(?<year>\d{4})\s*г[\.]{0,1}в/u', $lot['shortInfo'], $yearMatch)) {
+            $result['year'] = $yearMatch['year'];
         }
 
         return $result;
@@ -422,6 +494,11 @@ class WorkerCommand extends \CLIFramework\Command
         $searchParams = $search['params'];
 
         $this->loadUrl(self::TORGI_INIT_URL, ['curl' => [CURLOPT_FOLLOWLOCATION => false, CURLOPT_COOKIE => 'JSESSIONID=']]);
+
+        if (!array_key_exists('JSESSIONID', $this->torgiCookies)) {
+            return $result;
+        }
+
         $this->loadUrl(str_replace('%JSESSIONID%', $this->torgiCookies['JSESSIONID'], self::TORGI_INIT_SEARCH_URL));
 
         if ($searchParams['type']) {
@@ -477,7 +554,11 @@ class WorkerCommand extends \CLIFramework\Command
 
             $xmlCrawler = new Crawler($searchResponse);
             $htmlCrawler = new Crawler;
-            $htmlCrawler->addHtmlContent($xmlCrawler->filter('ajax-response > component')->eq(self::TORGI_SEARCH_URL === $searchUrl ? 1 : 0)->text(), 'UTF-8');
+
+            if ($xmlCrawler->filter('ajax-response > component')->count()) {
+                $htmlCrawler->addHtmlContent($xmlCrawler->filter('ajax-response > component')->eq(self::TORGI_SEARCH_URL === $searchUrl ? 1 : 0)->text(), 'UTF-8');
+            }
+
             $htmlCrawler->filter('tbody tr')->each(function(Crawler $node) use (&$result, $search) {
                 $lotUrl = '';
 
@@ -749,7 +830,10 @@ class WorkerCommand extends \CLIFramework\Command
         $searchResult = $crawler->filter('.cornerText_o font');
 
         if ($searchResult->count()) {
-            $result['cenamashinPrice'] = (int)preg_filter('/[^\d]/u', '', $searchResult->eq(0)->text());
+            if (preg_match('/от(?<minPrice>\d+)до/ui', preg_replace('/\s/','', $crawler->filter('.cornerText_o div')->text()), $matchPrice)) {
+                $result['cenamashinPrice'] = $matchPrice['minPrice'];
+            }
+            $result['cenamashinPriceAvg'] = (int)preg_filter('/[^\d]/u', '', $searchResult->eq(0)->text());
             $result['cenamashinUrl'] = $searchUrl;
         }
 
