@@ -240,7 +240,7 @@ class WorkerCommand extends \CLIFramework\Command
         ksort($result['foundedObjects']);
         ksort($result['notFoundedObjects']);
 
-//        $this->saveSearchHistory($lots);
+        $this->saveSearchHistory($lots);
 
         $result['lotsCount'] = count($lots);
 
@@ -481,7 +481,7 @@ class WorkerCommand extends \CLIFramework\Command
             });
         }
 
-        if (!$result['year'] && preg_match('/\D*(?<year>\d{4})\s*г[\.]{0,1}в/u', $lot['shortInfo'], $yearMatch)) {
+        if (preg_match('/\D*(?<year>\d{4})\s*г[\.]{0,1}в/u', $lot['shortInfo'], $yearMatch)) {
             $result['year'] = $yearMatch['year'];
         }
 
